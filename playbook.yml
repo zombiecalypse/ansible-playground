@@ -1,14 +1,81 @@
-- name: Hello playbook
+# Adjusted from https://github.com/Muthukumar-Subramaniam/install-k8s-on-linux
+- name: Install kubernetes
   hosts: webservers
   tasks:
-    - name: Ping hosts
-      ansible.builtin.ping:
-    - name: Upgrade packages
+    # The original script fetches the latest versions, which might not be
+    # what you want, as it will upgrade to new major versions, which
+    # can break other tools.
+    - name: Define version facts as globals
+      set_fact:
+        kubernetes_version: "v1.34.2"
+        kubernetes_version_major_minor: "v1.34"
+    - name: Print versions
+      delegate_to: localhost
+      run_once: true
+      debug:
+        msg:
+          - "kubernetes version: {{ kubernetes_version }}"
+          - "kubernetes repo version: {{ kubernetes_version_major_minor }}"
+    # apt-key is deprecated, so this step won't work.
+    # - name: Add kubernetes apt-key
+    #   become: true
+    #   apt_key:
+    #     keyring: /etc/apt/keyrings/k8s-apt-keyring-{{ kubernetes_version_major_minor }}.gpg
+    #     url: https://pkgs.k8s.io/core:/stable:/{{ kubernetes_version_major_minor }}/deb/Release.key
+    #     state: present
+    # Instead we follow the manual process:
+    # https://askubuntu.com/questions/1286545/what-commands-exactly-should-replace-the-deprecated-apt-key
+    # https://kubernetes.io/docs/tasks/tools/install-kubectl-linux/#install-using-native-package-management
+    - name: Create temp dir for key juggling
+      delegate_to: localhost
+      tempfile:
+        state: "directory"
+        prefix: "kube_key"
+      register: temp_key_dir
+    - name: Debug temp dir
+      delegate_to: localhost
+      debug:
+        msg: "Temp dir: {{ temp_key_dir.path }}"
+    - name: Fetch kubernetes repository key
+      delegate_to: localhost
+      uri:
+        url: "https://pkgs.k8s.io/core:/stable:/{{ kubernetes_version_major_minor }}/deb/Release.key"
+        method: GET
+        status_code: 200
+        return_content: true
+      changed_when: false
+      register: kube_key
+    - name: Convert key to keyring
+      delegate_to: localhost
+      command:
+        cmd: "gpg --dearmor -o {{ temp_key_dir.path }}/kube-keyring.gpg"
+        stdin: "{{ kube_key.content }}"
+      changed_when: false
+    - name: Install keyring
+      become: true
+      copy:
+        src: "{{ temp_key_dir.path }}/kube-keyring.gpg"
+        dest: "/etc/apt/keyrings/k8s-apt-keyring-{{ kubernetes_version_major_minor }}.gpg"
+
+    - name: Add kubernetes repository
+      become: true
+      apt_repository:
+        filename: "k8s-{{ kubernetes_version_major_minor }}"
+        repo: "deb [signed-by=/etc/apt/keyrings/k8s-apt-keyring-{{ kubernetes_version_major_minor }}.gpg] https://pkgs.k8s.io/core:/stable:/{{ kubernetes_version_major_minor }}/deb/ /"
+        state: present
+        update-cache: true
+    - name: Install kubernetes tools
+      become: true
       apt:
-        force_apt_get: yes
-        upgrade: dist
-        # Use --ask-become-pass to ask for sudo password for hosts or:
-        # $ ansible-vault create vault.yml
-        # ansible_become_password: "foobar"
-        # $ ansible-playbook --extra-vars "@vault.yml" --ask-vault-pass ...
-      become: yes
+        name:
+          - kubelet
+          - kubeadm
+          - kubectl
+        state: present
+# Should also do:
+# - update firewalld to allow kubernetes ports
+# - configure kubernetes control plane
+# - update kubelet.conf to add node to cluster
+# - etc
+# but for an experiment this is good enough
+

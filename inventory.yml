@@ -1,3 +1,8 @@
+all:
+  children:
+    webservers:
+    databases:
+
 webservers:
   hosts:
     127.0.0.1:
