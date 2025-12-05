@@ -3,6 +3,6 @@
   tasks:
     - name: Ping hosts
       ansible.builtin.ping:
-    - name: Print message
+    - name: Print facts
       ansible.builtin.debug:
-        msg: Hello world
+        var: ansible_facts
