@@ -3,6 +3,9 @@
   tasks:
     - name: Ping hosts
       ansible.builtin.ping:
-    - name: Print facts
-      ansible.builtin.debug:
-        var: ansible_facts.cmdline
+    - name: Upgrade packages
+      apt:
+        force_apt_get: yes
+        upgrade: dist
+      # Use --ask-become-pass to ask for sudo password for hosts
+      become: yes
